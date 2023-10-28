@@ -36,9 +36,6 @@ async def command_start_handler(message: Message) -> None:
 
 @dp.message()
 async def message_handler(message: types.Message) -> None:
-    """
-    """
-    # Send a copy of the received message
     message_data = None
 
     try: 
