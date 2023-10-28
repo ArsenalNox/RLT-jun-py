@@ -44,17 +44,13 @@ async def message_handler(message: types.Message) -> None:
         message_data = json.loads(message.text)
     except Exception as err:
         logging.error('Failed to read json from user input')
-        await message.answer('No valid data provided')
+        return await message.answer('No valid data provided')
+        
 
     if not str(message_data['group_type']).lower() in ALLOWED_GROUPINGS:
-        await message.answer('No valid grouping type provided')
-        return
+        return await message.answer('No valid grouping type provided')
     
-    lower_bound = datetime.strptime(message_data['dt_from'], "%Y-%m-%dT%H:%M:%S")
-    upper_bound = datetime.strptime(message_data['dt_upto'], "%Y-%m-%dT%H:%M:%S")
-
-    difference = relativedelta.relativedelta(lower_bound, upper_bound)
-
+    #Определение типа группировки для использования в агрегации
     goruping_type = None
     match message_data['group_type']:
         case 'month':
@@ -68,12 +64,10 @@ async def message_handler(message: types.Message) -> None:
 
         case 'hour':
             goruping_type = {"date": {"$dateTrunc": {"date": "$dt", "unit": "hour"}}}
-            upper_bound = datetime.strptime(message_data['dt_upto'], "%Y-%m-%dT%H:%M:%S")
 
         case _:
             goruping_type = None
 
-    
 
     aggregation = sample_collection.aggregate(
         [
@@ -90,8 +84,8 @@ async def message_handler(message: types.Message) -> None:
                     "step": 1,
                     "unit": message_data['group_type'],
                     "bounds": [
-                        lower_bound,
-                        upper_bound
+                        datetime.strptime(message_data['dt_from'], "%Y-%m-%dT%H:%M:%S"),
+                        datetime.strptime(message_data['dt_upto'], "%Y-%m-%dT%H:%M:%S")
                         ]
                         }}
             },
@@ -110,7 +104,6 @@ async def message_handler(message: types.Message) -> None:
     lables = []
     data = []
 
-    print(difference.days)
     for item in aggregation:
         lables.append(datetime.strftime(item['_id']['date'], "%Y-%m-%dT%H:%M:%S"))
         data.append(item['total_value'])
