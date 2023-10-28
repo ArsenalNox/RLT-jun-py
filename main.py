@@ -14,7 +14,9 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 from aiogram.utils.markdown import hbold
 
-from datetime import datetime, timezone
+from dateutil import relativedelta
+from datetime import datetime, timezone, timedelta
+import datetime as dt
 
 load_dotenv()
 
@@ -48,6 +50,11 @@ async def message_handler(message: types.Message) -> None:
         await message.answer('No valid grouping type provided')
         return
     
+    lower_bound = datetime.strptime(message_data['dt_from'], "%Y-%m-%dT%H:%M:%S")
+    upper_bound = datetime.strptime(message_data['dt_upto'], "%Y-%m-%dT%H:%M:%S")
+
+    difference = relativedelta.relativedelta(lower_bound, upper_bound)
+
     goruping_type = None
     match message_data['group_type']:
         case 'month':
@@ -61,10 +68,12 @@ async def message_handler(message: types.Message) -> None:
 
         case 'hour':
             goruping_type = {"date": {"$dateTrunc": {"date": "$dt", "unit": "hour"}}}
-    
+            upper_bound = datetime.strptime(message_data['dt_upto'], "%Y-%m-%dT%H:%M:%S")
+
         case _:
             goruping_type = None
 
+    
 
     aggregation = sample_collection.aggregate(
         [
@@ -74,6 +83,17 @@ async def message_handler(message: types.Message) -> None:
                     '$lte':  datetime.strptime(message_data['dt_upto'],  "%Y-%m-%dT%H:%M:%S")
                     }
                 }
+            },
+            {"$densify": {
+                "field": "dt",
+                "range": {
+                    "step": 1,
+                    "unit": message_data['group_type'],
+                    "bounds": [
+                        lower_bound,
+                        upper_bound
+                        ]
+                        }}
             },
             {"$project": 
                 {"date_grouping": goruping_type, "value": "$value"}
@@ -90,11 +110,21 @@ async def message_handler(message: types.Message) -> None:
     lables = []
     data = []
 
+    print(difference.days)
     for item in aggregation:
         lables.append(datetime.strftime(item['_id']['date'], "%Y-%m-%dT%H:%M:%S"))
         data.append(item['total_value'])
 
-    await message.answer(f'{{"dataset": {data}\n"lables": {lables}}}')
+    #При выборке по датам не добавляется крайняя высшая граница даты в датасет - решение ниже  
+    if "00:00:00" in message_data['dt_upto'] and message_data['group_type'] == 'day':
+        lables.append(message_data['dt_upto'])
+        data.append(0)
+    
+    if "00:00:00" in message_data['dt_upto'] and message_data['group_type'] == 'hour':
+        lables.append(message_data['dt_upto'])
+        data.append(0)
+
+    await message.answer(f'{{"dataset": {data},\n"labels": {json.dumps(lables)}}}')
 
 
 async def main() -> None:
